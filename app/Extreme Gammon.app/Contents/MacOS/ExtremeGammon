@@ -61,7 +61,7 @@ launch_xg() {
 
 mkdir -p "$HOME/Desktop"
 : > "$LOG"
-note "Starting Extreme Gammon…"
+note "Starting Extreme Gammon..."
 log "PATH=$PATH"
 log "arch=$(uname -m)"
 
@@ -73,7 +73,7 @@ fi
 mkdir -p "$CACHE/Engines" "$CACHE/Template" "$HOME/Applications" "$CACHE/downloads"
 
 if [[ "$(uname -m)" == "arm64" ]] && ! /usr/bin/pgrep -q oahd; then
-  note "Installing Rosetta (one-time, may ask for your Mac password)…"
+  note "Installing Rosetta (one-time, may ask for your Mac password)..."
   /usr/sbin/softwareupdate --install-rosetta --agree-to-license >>"$LOG" 2>&1 || true
 fi
 
@@ -83,7 +83,7 @@ fetch() {
     log "Already have $label"
     return 0
   fi
-  note "Downloading $label…"
+  note "Downloading ${label}..."
   if ! curl -fsSL --retry 3 --retry-delay 2 -o "$dest.partial" "$url" >>"$LOG" 2>&1; then
     note "Download failed: $label. Check the internet and double-click Extreme Gammon again."
     open -e "$LOG"
@@ -99,12 +99,12 @@ fetch "$XG_URL" "$CACHE/downloads/XG2install.exe" "Extreme Gammon"
 /usr/bin/xattr -drs com.apple.quarantine "$CACHE" >/dev/null 2>&1 || true
 
 if [[ -d "$WRAPPER" && ! -f "$WRAPPER/Contents/SharedSupport/wine/version" ]]; then
-  log "Wrapper exists but Wine is missing — rebuilding."
+  log "Wrapper exists but Wine is missing - rebuilding."
   rm -rf "$WRAPPER"
 fi
 
 if [[ ! -d "$WRAPPER" ]]; then
-  note "Building the game app…"
+  note "Building the game app..."
   tmp="$(mktemp -d)"
   tar -xf "$CACHE/Template/${TEMPLATE}.tar.xz" -C "$tmp" >>"$LOG" 2>&1 || {
     note "Could not unpack the wrapper. See the install log on your Desktop."
@@ -147,7 +147,7 @@ LAUNCH="$WRAPPER/Contents/MacOS/Sikarugir"
 chmod +x "$LAUNCH" 2>/dev/null || true
 
 if [[ ! -d "$WRAPPER/Contents/drive_c/windows" ]]; then
-  note "Creating the game folder…"
+  note "Creating the game folder..."
   if ! clean_env "$LAUNCH" WSS-wineprefixcreate >>"$LOG" 2>&1; then
     note "Could not create the game folder. See the install log on your Desktop."
     open -e "$LOG"
@@ -191,7 +191,7 @@ if [[ -n "$WINEBIN" ]]; then
 fi
 
 if ! xg_ready; then
-  note "Installing Extreme Gammon…"
+  note "Installing Extreme Gammon..."
   mkdir -p "$WRAPPER/Contents/drive_c/users/crossover/Downloads"
   cp "$CACHE/downloads/XG2install.exe" "$WRAPPER/Contents/drive_c/XG2install.exe"
   if ! clean_env "$LAUNCH" WSS-installer "C:\\XG2install.exe" >>"$LOG" 2>&1; then
@@ -217,6 +217,6 @@ polish_wrapper_plist
 # Ad-hoc sign again after plist edits so Gatekeeper is less noisy
 /usr/bin/codesign --force --deep --sign - "$WRAPPER" >>"$LOG" 2>&1 || true
 
-note "Opening Extreme Gammon…"
+note "Opening Extreme Gammon..."
 log "Install finished."
 launch_xg
