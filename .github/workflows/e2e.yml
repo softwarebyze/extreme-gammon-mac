@@ -29,6 +29,23 @@ jobs:
               sys.exit(f"launcher is not executable, mode={oct(mode)}")
           print("ok", launch[0], oct(mode))
           PY
+      - name: Linux launcher is valid bash
+        run: bash -n linux/play-extreme-gammon
+      - name: Linux zip contains +x launcher
+        run: |
+          python3 - << 'PY'
+          import zipfile, sys
+          z = zipfile.ZipFile("dist/Extreme-Gammon-for-Linux.zip")
+          names = z.namelist()
+          launch = [n for n in names if n.endswith("play-extreme-gammon")]
+          if not launch:
+              sys.exit("launcher missing from zip: " + ", ".join(names))
+          info = z.getinfo(launch[0])
+          mode = (info.external_attr >> 16) & 0o777
+          if mode & 0o111 == 0:
+              sys.exit(f"launcher is not executable, mode={oct(mode)}")
+          print("ok", launch[0], oct(mode))
+          PY
       - name: Official downloads still exist
         run: |
           curl -fsI "https://www.extremegammon.com/xg2install.exe" | head -n 5
@@ -74,5 +91,43 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: install-log
+          path: ${{ runner.temp }}/xghome/Desktop/*.txt
+          if-no-files-found: ignore
+
+  linux-install:
+    name: full Linux install
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable i386 and install Wine
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wine wine32 xvfb curl; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wine wine32:i386 xvfb curl
+          fi
+      - name: Run installer (no GUI open)
+        run: |
+          export CI=true
+          export HOME="${RUNNER_TEMP}/xghome"
+          export XG_WINEPREFIX="$HOME/.local/share/extreme-gammon/wineprefix"
+          export XG_SKIP_LAUNCH=1
+          mkdir -p "$HOME/Desktop"
+          chmod +x linux/play-extreme-gammon
+          xvfb-run -a bash linux/play-extreme-gammon
+      - name: Assert XG is installed
+        run: |
+          export HOME="${RUNNER_TEMP}/xghome"
+          export XG_WINEPREFIX="$HOME/.local/share/extreme-gammon/wineprefix"
+          exe="$XG_WINEPREFIX/drive_c/Program Files/eXtreme Gammon 2/eXtremeGammon2.exe"
+          ls -la "$XG_WINEPREFIX/drive_c/Program Files" || true
+          test -f "$exe"
+          echo "XG exe ok: $exe"
+      - name: Upload install log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-install-log
           path: ${{ runner.temp }}/xghome/Desktop/*.txt
           if-no-files-found: ignore
