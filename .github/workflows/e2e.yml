@@ -8,8 +8,12 @@ jobs:
   smoke:
     name: pack and syntax
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Launcher is valid bash
         run: bash -n "app/Extreme Gammon.app/Contents/MacOS/ExtremeGammon"
       - name: Pack zip with execute bit
@@ -56,8 +60,12 @@ jobs:
     name: full Mac install
     runs-on: macos-14
     needs: smoke
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run installer (no GUI open)
         env:
           HOME: ${{ runner.temp }}/xghome
@@ -98,8 +106,12 @@ jobs:
     name: full Linux install
     runs-on: ubuntu-latest
     needs: smoke
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Enable i386 and install Wine
         run: |
           sudo dpkg --add-architecture i386
