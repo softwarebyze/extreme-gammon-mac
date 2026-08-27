@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Extreme-Gammon-for-Mac.zip with Unix execute bits preserved."""
+"""Build Mac and Linux zip files with Unix execute bits preserved."""
 from pathlib import Path
 import zipfile
 import sys
@@ -38,3 +38,24 @@ with zipfile.ZipFile(OUT, "w") as zf:
         else:
             add_file(zf, p, arc, executable=(p.name == "ExtremeGammon"))
 print(OUT)
+
+LINUX = ROOT / "linux"
+KEEP = {
+    "play-extreme-gammon",
+    "extreme-gammon.desktop",
+    "How to open this.txt",
+}
+LOUT = OUT.parent / "Extreme-Gammon-for-Linux.zip"
+if LOUT.exists():
+    LOUT.unlink()
+with zipfile.ZipFile(LOUT, "w") as zf:
+    add_dir(zf, "Extreme Gammon for Linux/")
+    for p in sorted(LINUX.iterdir()):
+        if p.is_file() and p.name in KEEP:
+            add_file(
+                zf,
+                p,
+                f"Extreme Gammon for Linux/{p.name}",
+                executable=(p.name == "play-extreme-gammon"),
+            )
+print(LOUT)

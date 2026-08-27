@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Extreme Gammon
+Comment=Play Extreme Gammon
+Exec=PLACEHOLDER
+Terminal=false
+Categories=Game;
+StartupNotify=true

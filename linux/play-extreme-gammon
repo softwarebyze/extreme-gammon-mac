@@ -1,0 +1,133 @@
+#!/bin/bash
+# Extreme Gammon for Linux. Double-click, or run from a terminal.
+set -euo pipefail
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH"
+
+PREFIX="${XG_WINEPREFIX:-$HOME/.local/share/extreme-gammon/wineprefix}"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/extreme-gammon"
+XG_URL="https://www.extremegammon.com/xg2install.exe"
+XG_EXE="$PREFIX/drive_c/Program Files/eXtreme Gammon 2/eXtremeGammon2.exe"
+LOG="$HOME/Desktop/Extreme Gammon install log.txt"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+log() {
+  mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
+  printf '%s %s\n' "$(date '+%H:%M:%S')" "$*" | tee -a "$LOG"
+}
+
+need_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+run_root() {
+  if [[ -n "${GITHUB_ACTIONS:-}${CI:-}" ]]; then
+    sudo "$@"
+  elif [[ ! -t 0 ]] && need_cmd pkexec; then
+    pkexec "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+install_wine() {
+  if need_cmd wine; then
+    log "Wine already installed: $(wine --version 2>/dev/null || true)"
+    return 0
+  fi
+  log "Installing Wine (may ask for your password)..."
+  if need_cmd apt-get; then
+    run_root bash -c 'dpkg --add-architecture i386 || true; apt-get update -qq; DEBIAN_FRONTEND=noninteractive apt-get install -y wine wine32 wine64 || DEBIAN_FRONTEND=noninteractive apt-get install -y wine'
+  elif need_cmd dnf; then
+    run_root dnf install -y wine wine.i686 || run_root dnf install -y wine
+  elif need_cmd pacman; then
+    run_root pacman -Sy --noconfirm wine
+  else
+    log "Could not install Wine automatically. Install the wine package, then run this again."
+    exit 1
+  fi
+  if ! need_cmd wine; then
+    log "Wine did not install. Install the wine package, then run this again."
+    exit 1
+  fi
+}
+
+xg_ready() { [[ -f "$XG_EXE" ]]; }
+
+write_launchers() {
+  local apps="$HOME/.local/share/applications"
+  local desk="$HOME/Desktop"
+  mkdir -p "$apps" "$desk" 2>/dev/null || true
+  local body
+  body=$(cat <<D
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Extreme Gammon
+Comment=Play Extreme Gammon
+Exec="${HERE}/play-extreme-gammon"
+Terminal=false
+Categories=Game;
+StartupNotify=true
+D
+)
+  printf '%s\n' "$body" > "$apps/extreme-gammon.desktop" || true
+  printf '%s\n' "$body" > "$desk/extreme-gammon.desktop" || true
+  chmod +x "$HERE/play-extreme-gammon" "$apps/extreme-gammon.desktop" "$desk/extreme-gammon.desktop" 2>/dev/null || true
+  gio set "$apps/extreme-gammon.desktop" metadata::trusted true 2>/dev/null || true
+  gio set "$desk/extreme-gammon.desktop" metadata::trusted true 2>/dev/null || true
+}
+
+launch() {
+  write_launchers
+  if [[ "${XG_SKIP_LAUNCH:-}" == "1" ]]; then
+    log "XG installed. Skipping launch (XG_SKIP_LAUNCH=1)."
+    exit 0
+  fi
+  export WINEPREFIX="$PREFIX"
+  export WINEARCH="${WINEARCH:-win32}"
+  export WINEDEBUG="-all"
+  export WINEDLLOVERRIDES="mscoree,mshtml="
+  exec wine "$XG_EXE"
+}
+
+mkdir -p "$HOME/Desktop" "$CACHE" "$(dirname "$PREFIX")"
+: > "$LOG"
+log "Starting Extreme Gammon for Linux..."
+
+if xg_ready; then
+  launch
+fi
+
+install_wine
+mkdir -p "$CACHE"
+if [[ ! -s "$CACHE/XG2install.exe" ]]; then
+  log "Downloading Extreme Gammon trial..."
+  curl -fL --retry 3 -o "$CACHE/XG2install.exe.partial" "$XG_URL"
+  mv "$CACHE/XG2install.exe.partial" "$CACHE/XG2install.exe"
+fi
+
+export WINEPREFIX="$PREFIX"
+export WINEARCH="${WINEARCH:-win32}"
+export WINEDEBUG="-all"
+export WINEDLLOVERRIDES="mscoree,mshtml="
+export DISPLAY="${DISPLAY:-:0}"
+
+log "Creating Wine folder..."
+wineboot --init >/dev/null 2>&1 || wineboot --init || true
+
+log "Installing Extreme Gammon..."
+wine "$CACHE/XG2install.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- || \
+  wine "$CACHE/XG2install.exe" || true
+
+n=0
+while [[ $n -lt 45 ]]; do
+  xg_ready && break
+  sleep 2
+  n=$((n + 1))
+done
+
+if ! xg_ready; then
+  log "Install did not finish. See $LOG"
+  exit 1
+fi
+
+log "Install finished."
+launch

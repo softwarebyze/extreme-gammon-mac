@@ -1,0 +1,12 @@
+Extreme Gammon for Linux
+
+1. Unzip this folder.
+2. Double-click play-extreme-gammon. If your file manager asks, choose Run.
+3. First launch may ask for your password so it can install Wine.
+4. After that, Extreme Gammon is in your app menu and on the Desktop.
+
+Needs Ubuntu/Debian, Fedora, or Arch, and a desktop.
+First launch downloads the official 14-day XG trial from extremegammon.com.
+
+Extreme Gammon is a 14-day trial. Buy a license at https://www.extremegammon.com/ to keep it.
+This project is not affiliated with eXtreme Gammon or Gamesite 2000.
