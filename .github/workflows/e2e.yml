@@ -1,0 +1,80 @@
+name: e2e
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  smoke:
+    name: pack and syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Launcher is valid bash
+        run: bash -n "app/Extreme Gammon.app/Contents/MacOS/ExtremeGammon"
+      - name: Pack zip with execute bit
+        run: python3 scripts/pack-zip.py dist/Extreme-Gammon-for-Mac.zip
+      - name: Zip contains +x launcher
+        run: |
+          python3 - << 'PY'
+          import zipfile, sys
+          z = zipfile.ZipFile("dist/Extreme-Gammon-for-Mac.zip")
+          names = z.namelist()
+          launch = [n for n in names if n.endswith("MacOS/ExtremeGammon")]
+          if not launch:
+              sys.exit("launcher missing from zip: " + ", ".join(names))
+          info = z.getinfo(launch[0])
+          mode = (info.external_attr >> 16) & 0o777
+          if mode & 0o111 == 0:
+              sys.exit(f"launcher is not executable, mode={oct(mode)}")
+          print("ok", launch[0], oct(mode))
+          PY
+      - name: Official downloads still exist
+        run: |
+          curl -fsI "https://www.extremegammon.com/xg2install.exe" | head -n 5
+          curl -fsI "https://github.com/Sikarugir-App/Engines/releases/download/v1.0/WS12WineSikarugir10.0_6.tar.xz" | head -n 8
+          curl -fsI "https://github.com/Sikarugir-App/Wrapper/releases/download/v1.0/Template-1.0.11.tar.xz" | head -n 8
+
+  mac-install:
+    name: full Mac install
+    runs-on: macos-14
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run installer (no GUI open)
+        env:
+          HOME: ${{ runner.temp }}/xghome
+        run: |
+          mkdir -p "$HOME/Desktop" "$HOME/Applications"
+          chmod +x "app/Extreme Gammon.app/Contents/MacOS/ExtremeGammon"
+          # Patch launch so CI does not try to `open` a GUI at the end
+          launcher="app/Extreme Gammon.app/Contents/MacOS/ExtremeGammon"
+          python3 - << 'PY'
+          from pathlib import Path
+          p = Path("app/Extreme Gammon.app/Contents/MacOS/ExtremeGammon")
+          t = p.read_text()
+          t = t.replace(
+              'clean_env /usr/bin/open "$WRAPPER"\n  exit 0',
+              'echo "CI: skipping GUI open"; exit 0',
+          )
+          t = t.replace("open -e \"$LOG\"", "echo \"log at $LOG\"")
+          p.write_text(t)
+          PY
+          bash "$launcher"
+      - name: Assert XG is installed
+        env:
+          HOME: ${{ runner.temp }}/xghome
+        run: |
+          exe="$HOME/Applications/Extreme Gammon.app/Contents/drive_c/Program Files/eXtreme Gammon 2/eXtremeGammon2.exe"
+          ls -la "$HOME/Applications/Extreme Gammon.app/Contents" || true
+          test -f "$exe"
+          echo "XG exe ok: $exe"
+          plist="$HOME/Applications/Extreme Gammon.app/Contents/Info.plist"
+          plutil -p "$plist" | grep -i "Extreme Gammon" || true
+      - name: Upload install log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-log
+          path: ${{ runner.temp }}/xghome/Desktop/*.txt
+          if-no-files-found: ignore

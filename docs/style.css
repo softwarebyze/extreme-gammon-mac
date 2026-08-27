@@ -1,0 +1,64 @@
+:root {
+  --felt: #123024;
+  --felt-2: #1a4030;
+  --cream: #f5ecd6;
+  --gold: #d4a556;
+  --muted: #b4c8bc;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  background: var(--felt);
+  color: var(--cream);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+header, main, footer {
+  max-width: 38rem;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+header { padding-top: 4.5rem; padding-bottom: 2rem; }
+.kicker {
+  color: var(--gold);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+h1 {
+  font-size: clamp(2.2rem, 6vw, 3.4rem);
+  line-height: 1.1;
+  font-weight: 700;
+  margin: 0.4rem 0 1rem;
+}
+.lede { font-size: 1.2rem; color: var(--muted); max-width: 28rem; }
+h2 { font-size: 1.15rem; margin-top: 2.4rem; }
+a { color: var(--gold); }
+.btn {
+  display: inline-block;
+  margin-top: 0.5rem;
+  background: var(--gold);
+  color: var(--felt);
+  text-decoration: none;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  padding: 0.85rem 1.4rem;
+  border-radius: 4px;
+}
+.btn:hover { filter: brightness(1.08); }
+.meta {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+ol, ul { padding-left: 1.2rem; }
+li { margin: 0.4rem 0; }
+footer {
+  padding: 3rem 1.5rem 4rem;
+  color: var(--muted);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+}
+footer a { color: var(--muted); }

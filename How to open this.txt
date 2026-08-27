@@ -1,0 +1,12 @@
+Extreme Gammon for Mac
+
+1. Double-click Extreme Gammon.
+2. If Mac says it cannot verify the developer: right-click Extreme Gammon, click Open, then Open again.
+
+First launch takes 5–10 minutes and needs internet.
+A status file appears on the Desktop while it works.
+
+The first time the game opens, it may ask for a language and a couple of Next clicks.
+
+Extreme Gammon is a 14-day trial. Buy a license at https://www.extremegammon.com/ to keep it.
+This project is not affiliated with eXtreme Gammon or Gamesite 2000.

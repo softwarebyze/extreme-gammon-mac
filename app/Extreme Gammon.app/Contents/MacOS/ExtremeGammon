@@ -1,0 +1,222 @@
+#!/bin/bash
+set -euo pipefail
+# Sikarugir FileUtilsError 1 if PATH has more than one chmod.
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+
+ENGINE="WS12WineSikarugir10.0_6"
+TEMPLATE="Template-1.0.11"
+ENGINE_URL="https://github.com/Sikarugir-App/Engines/releases/download/v1.0/${ENGINE}.tar.xz"
+TEMPLATE_URL="https://github.com/Sikarugir-App/Wrapper/releases/download/v1.0/${TEMPLATE}.tar.xz"
+XG_URL="https://www.extremegammon.com/xg2install.exe"
+
+WRAPPER="$HOME/Applications/Extreme Gammon.app"
+CACHE="$HOME/Library/Application Support/ExtremeGammon"
+LOG="$HOME/Desktop/Extreme Gammon install log.txt"
+XG_EXE="$WRAPPER/Contents/drive_c/Program Files/eXtreme Gammon 2/eXtremeGammon2.exe"
+
+log() { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*" >> "$LOG"; }
+note() { log "$1"; printf '%s\n' "$1" > "$HOME/Desktop/Extreme Gammon status.txt"; }
+
+xg_ready() { [[ -f "$XG_EXE" ]]; }
+
+clean_env() {
+  env -i \
+    HOME="$HOME" \
+    USER="${USER:-}" \
+    LOGNAME="${LOGNAME:-${USER:-}}" \
+    TMPDIR="${TMPDIR:-/tmp}" \
+    LANG="${LANG:-en_US.UTF-8}" \
+    PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+    WINEDEBUG="-all" \
+    WINEDLLOVERRIDES="mscoree,mshtml=" \
+    DISPLAY="${DISPLAY:-}" \
+    "$@"
+}
+
+polish_wrapper_plist() {
+  local plist="$WRAPPER/Contents/Info.plist"
+  [[ -f "$plist" ]] || return 0
+  plutil -replace "CFBundleName" -string "Extreme Gammon" "$plist" >/dev/null 2>&1 || true
+  plutil -replace "CFBundleDisplayName" -string "Extreme Gammon" "$plist" >/dev/null 2>&1 || true
+  plutil -replace "CFBundleIdentifier" -string "com.playxg.extremegammon.wrapper" "$plist" >/dev/null 2>&1 || true
+  plutil -replace "CFBundlePackageType" -string "APPL" "$plist" >/dev/null 2>&1 || true
+  plutil -replace "LSMinimumSystemVersion" -string "14.0" "$plist" >/dev/null 2>&1 || true
+  plutil -replace "NSHighResolutionCapable" -bool true "$plist" >/dev/null 2>&1 || true
+  plutil -replace "LSMultipleInstancesProhibited" -bool true "$plist" >/dev/null 2>&1 || true
+  plutil -replace "Skip Gecko" -integer 1 "$plist" >/dev/null 2>&1 || true
+  plutil -replace "Skip Mono" -integer 1 "$plist" >/dev/null 2>&1 || true
+  plutil -replace "Program Name and Path" -string "/Program Files/eXtreme Gammon 2/eXtremeGammon2.exe" "$plist" >/dev/null 2>&1 || true
+  # Don't pop Configure.app / debug logs on launch
+  plutil -replace "Debug Mode" -integer 0 "$plist" >/dev/null 2>&1 || true
+  plutil -replace "always make Log files" -integer 0 "$plist" >/dev/null 2>&1 || true
+}
+
+launch_xg() {
+  polish_wrapper_plist
+  /usr/bin/xattr -drs com.apple.quarantine "$WRAPPER" >/dev/null 2>&1 || true
+  rm -f "$HOME/Desktop/Extreme Gammon status.txt"
+  clean_env /usr/bin/open "$WRAPPER"
+  exit 0
+}
+
+mkdir -p "$HOME/Desktop"
+: > "$LOG"
+note "Starting Extreme Gammon…"
+log "PATH=$PATH"
+log "arch=$(uname -m)"
+
+if xg_ready; then
+  log "Already installed, launching."
+  launch_xg
+fi
+
+mkdir -p "$CACHE/Engines" "$CACHE/Template" "$HOME/Applications" "$CACHE/downloads"
+
+if [[ "$(uname -m)" == "arm64" ]] && ! /usr/bin/pgrep -q oahd; then
+  note "Installing Rosetta (one-time, may ask for your Mac password)…"
+  /usr/sbin/softwareupdate --install-rosetta --agree-to-license >>"$LOG" 2>&1 || true
+fi
+
+fetch() {
+  local url="$1" dest="$2" label="$3"
+  if [[ -s "$dest" ]]; then
+    log "Already have $label"
+    return 0
+  fi
+  note "Downloading $label…"
+  if ! curl -fsSL --retry 3 --retry-delay 2 -o "$dest.partial" "$url" >>"$LOG" 2>&1; then
+    note "Download failed: $label. Check the internet and double-click Extreme Gammon again."
+    open -e "$LOG"
+    exit 1
+  fi
+  mv "$dest.partial" "$dest"
+}
+
+fetch "$ENGINE_URL" "$CACHE/Engines/${ENGINE}.tar.xz" "Wine (~160 MB)"
+fetch "$TEMPLATE_URL" "$CACHE/Template/${TEMPLATE}.tar.xz" "wrapper (~80 MB)"
+fetch "$XG_URL" "$CACHE/downloads/XG2install.exe" "Extreme Gammon"
+
+/usr/bin/xattr -drs com.apple.quarantine "$CACHE" >/dev/null 2>&1 || true
+
+if [[ -d "$WRAPPER" && ! -f "$WRAPPER/Contents/SharedSupport/wine/version" ]]; then
+  log "Wrapper exists but Wine is missing — rebuilding."
+  rm -rf "$WRAPPER"
+fi
+
+if [[ ! -d "$WRAPPER" ]]; then
+  note "Building the game app…"
+  tmp="$(mktemp -d)"
+  tar -xf "$CACHE/Template/${TEMPLATE}.tar.xz" -C "$tmp" >>"$LOG" 2>&1 || {
+    note "Could not unpack the wrapper. See the install log on your Desktop."
+    open -e "$LOG"
+    exit 1
+  }
+  src=""
+  for c in "$tmp/${TEMPLATE}.app" "$tmp"/*.app; do
+    [[ -d "$c" ]] && { src="$c"; break; }
+  done
+  if [[ -z "$src" ]]; then
+    note "Wrapper template was not in the expected format."
+    open -e "$LOG"
+    exit 1
+  fi
+  rm -rf "$WRAPPER"
+  cp -R "$src" "$WRAPPER"
+  mkdir -p "$WRAPPER/Contents/SharedSupport"
+  tar -xf "$CACHE/Engines/${ENGINE}.tar.xz" -C "$WRAPPER/Contents/SharedSupport" >>"$LOG" 2>&1
+  if [[ -d "$WRAPPER/Contents/SharedSupport/wswine.bundle" ]]; then
+    rm -rf "$WRAPPER/Contents/SharedSupport/wine"
+    mv "$WRAPPER/Contents/SharedSupport/wswine.bundle" "$WRAPPER/Contents/SharedSupport/wine"
+  fi
+  if [[ ! -f "$WRAPPER/Contents/SharedSupport/wine/version" ]]; then
+    log "Wine layout after extract:"
+    /bin/ls -la "$WRAPPER/Contents/SharedSupport" >>"$LOG" 2>&1 || true
+    note "Wine did not unpack where the wrapper expects it. See the install log."
+    open -e "$LOG"
+    exit 1
+  fi
+  log "engine=$(cat "$WRAPPER/Contents/SharedSupport/wine/version")"
+  rm -rf "$tmp"
+fi
+
+/usr/bin/xattr -drs com.apple.quarantine "$WRAPPER" >/dev/null 2>&1 || true
+/usr/bin/codesign --force --deep --sign - "$WRAPPER" >>"$LOG" 2>&1 || true
+polish_wrapper_plist
+
+LAUNCH="$WRAPPER/Contents/MacOS/Sikarugir"
+chmod +x "$LAUNCH" 2>/dev/null || true
+
+if [[ ! -d "$WRAPPER/Contents/drive_c/windows" ]]; then
+  note "Creating the game folder…"
+  if ! clean_env "$LAUNCH" WSS-wineprefixcreate >>"$LOG" 2>&1; then
+    note "Could not create the game folder. See the install log on your Desktop."
+    open -e "$LOG"
+    exit 1
+  fi
+fi
+
+if [[ ! -d "$WRAPPER/Contents/drive_c/windows" ]]; then
+  note "The game folder still was not created. See the install log on your Desktop."
+  open -e "$LOG"
+  exit 1
+fi
+
+# Quiet Wine's Mac driver: fewer helper windows, keep keyboard in the game.
+REG="$WRAPPER/Contents/drive_c/windows/temp/xg-mac.reg"
+mkdir -p "$WRAPPER/Contents/drive_c/windows/temp"
+cat > "$REG" << 'REG'
+REGEDIT4
+
+[HKEY_CURRENT_USER\Software\Wine\Mac Driver]
+"Capture Input in Background"="n"
+"Use Command Left Click"="y"
+"Left Option Is Alt"="y"
+"Allow Immovable Windows"="y"
+"Use Retina Mode"="y"
+
+[HKEY_CURRENT_USER\Software\Wine\Explorer]
+"Desktop"=""
+REG
+WINEBIN=""
+for b in wine64 wine wine32on64; do
+  if [[ -x "$WRAPPER/Contents/SharedSupport/wine/bin/$b" ]]; then
+    WINEBIN="$WRAPPER/Contents/SharedSupport/wine/bin/$b"
+    break
+  fi
+done
+PREFIX="$WRAPPER/Contents/SharedSupport/prefix"
+[[ -d "$PREFIX" ]] || PREFIX="$WRAPPER/Contents"
+if [[ -n "$WINEBIN" ]]; then
+  clean_env env WINEPREFIX="$PREFIX" "$WINEBIN" regedit "C:\\windows\\temp\\xg-mac.reg" >>"$LOG" 2>&1 || true
+fi
+
+if ! xg_ready; then
+  note "Installing Extreme Gammon…"
+  mkdir -p "$WRAPPER/Contents/drive_c/users/crossover/Downloads"
+  cp "$CACHE/downloads/XG2install.exe" "$WRAPPER/Contents/drive_c/XG2install.exe"
+  if ! clean_env "$LAUNCH" WSS-installer "C:\\XG2install.exe" >>"$LOG" 2>&1; then
+    if [[ -n "$WINEBIN" ]]; then
+      log "Retrying silent install with $WINEBIN prefix=$PREFIX"
+      clean_env env WINEPREFIX="$PREFIX" "$WINEBIN" "$WRAPPER/Contents/drive_c/XG2install.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- >>"$LOG" 2>&1 || true
+    fi
+  fi
+  n=0
+  while [[ $n -lt 20 ]]; do
+    xg_ready && break
+    sleep 2
+    n=$((n+1))
+  done
+  if ! xg_ready; then
+    note "Install did not finish. Double-click Extreme Gammon to try again. Details are in the install log on your Desktop."
+    open -e "$LOG"
+    exit 1
+  fi
+fi
+
+polish_wrapper_plist
+# Ad-hoc sign again after plist edits so Gatekeeper is less noisy
+/usr/bin/codesign --force --deep --sign - "$WRAPPER" >>"$LOG" 2>&1 || true
+
+note "Opening Extreme Gammon…"
+log "Install finished."
+launch_xg

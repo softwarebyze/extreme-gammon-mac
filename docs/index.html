@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Extreme Gammon for Mac</title>
+  <meta name="description" content="Play Extreme Gammon on a Mac. Double-click one app. No Windows, no Terminal." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <p class="kicker">Open source · macOS 14+</p>
+    <h1>Play Extreme Gammon<br />on a Mac.</h1>
+    <p class="lede">XG is a Windows program. This is a one-click wrapper so you can just play backgammon.</p>
+    <p>
+      <a class="btn" id="download" href="https://github.com/softwarebyze/extreme-gammon-mac/releases/latest/download/Extreme-Gammon-for-Mac.zip">Download for Mac</a>
+    </p>
+    <p class="meta" id="version">Gets the latest release from GitHub.</p>
+  </header>
+
+  <main>
+    <section>
+      <h2>How to install</h2>
+      <ol>
+        <li>Download the zip. Unzip it.</li>
+        <li>Double-click <strong>Extreme Gammon</strong>.</li>
+        <li>If Mac says it cannot verify the developer, right-click the app, click Open, then Open again.</li>
+        <li>First launch takes 5–10 minutes and needs internet. After that it just starts the game.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>What you should know</h2>
+      <p>The first launch downloads Wine and the official Extreme Gammon trial from <a href="https://www.extremegammon.com/">extremegammon.com</a>. We do not ship XG itself.</p>
+      <p>The trial is fully unlocked for 14 days. After that you buy a license from them if you want to keep it. This project is free and not affiliated with them.</p>
+    </section>
+
+    <section>
+      <h2>Requirements</h2>
+      <ul>
+        <li>macOS 14 Sonoma or later</li>
+        <li>Apple Silicon or Intel</li>
+        <li>About 3 GB free</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <a href="https://github.com/softwarebyze/extreme-gammon-mac">Source on GitHub</a>
+    · MIT license
+    · Not affiliated with eXtreme Gammon
+  </footer>
+
+  <script>
+    fetch("https://api.github.com/repos/softwarebyze/extreme-gammon-mac/releases/latest")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.tag_name) return;
+        var el = document.getElementById("version");
+        el.textContent = "Latest: " + d.tag_name;
+        var asset = (d.assets || []).find(function (a) {
+          return a.name === "Extreme-Gammon-for-Mac.zip";
+        });
+        if (asset && asset.browser_download_url) {
+          document.getElementById("download").href = asset.browser_download_url;
+        }
+      })
+      .catch(function () {});
+  </script>
+</body>
+</html>

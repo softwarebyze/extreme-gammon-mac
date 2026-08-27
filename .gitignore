@@ -1,0 +1,3 @@
+dist/
+*.tar.xz
+.DS_Store
