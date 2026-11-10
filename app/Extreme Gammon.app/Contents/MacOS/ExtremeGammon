@@ -12,12 +12,106 @@ XG_URL="https://www.extremegammon.com/xg2install.exe"
 WRAPPER="$HOME/Applications/Extreme Gammon.app"
 CACHE="$HOME/Library/Application Support/ExtremeGammon"
 LOG="$HOME/Desktop/Extreme Gammon install log.txt"
-XG_EXE="$WRAPPER/Contents/drive_c/Program Files/eXtreme Gammon 2/eXtremeGammon2.exe"
+
+# Official Inno Setup path inside the Wine prefix (32-bit).
+XG_WIN_PATH="/Program Files (x86)/eXtreme Gammon 2/eXtremeGammon2.exe"
 
 log() { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*" >> "$LOG"; }
 note() { log "$1"; printf '%s\n' "$1" > "$HOME/Desktop/Extreme Gammon status.txt"; }
 
-xg_ready() { [[ -f "$XG_EXE" ]]; }
+macos_major() {
+  local ver
+  ver="$(/usr/bin/sw_vers -productVersion 2>/dev/null || true)"
+  printf '%s\n' "${ver%%.*}"
+}
+
+require_macos_14() {
+  local major
+  major="$(macos_major)"
+  log "macOS=$(/usr/bin/sw_vers -productVersion 2>/dev/null || echo unknown) major=${major:-unknown}"
+  case "$major" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  if [ "$major" -lt 14 ]; then
+    note "This Mac is on macOS ${major}, but Extreme Gammon for Mac needs macOS 14 Sonoma or later."
+    /usr/bin/osascript -e 'display dialog "Extreme Gammon for Mac needs macOS 14 Sonoma or later." buttons {"OK"} default button "OK" with title "Extreme Gammon"' >/dev/null 2>&1 || true
+    exit 0
+  fi
+}
+
+# Wine prefix may live at SharedSupport/prefix (Sikarugir) or Contents.
+resolve_prefix() {
+  local p
+  PREFIX="$WRAPPER/Contents"
+  for p in "$WRAPPER/Contents/SharedSupport/prefix" "$WRAPPER/Contents"; do
+    if [[ -d "$p/drive_c/windows" ]]; then
+      PREFIX="$p"
+      return 0
+    fi
+  done
+  if [[ -d "$WRAPPER/Contents/SharedSupport/prefix" ]]; then
+    PREFIX="$WRAPPER/Contents/SharedSupport/prefix"
+  else
+    PREFIX="$WRAPPER/Contents"
+  fi
+}
+
+# Print the installed exe path if it exists. Check both prefixes and both Program Files dirs.
+find_xg_exe() {
+  local p pf candidate
+  for p in "$WRAPPER/Contents/SharedSupport/prefix" "$WRAPPER/Contents"; do
+    for pf in "Program Files (x86)" "Program Files"; do
+      candidate="$p/drive_c/$pf/eXtreme Gammon 2/eXtremeGammon2.exe"
+      if [[ -f "$candidate" ]]; then
+        printf '%s\n' "$candidate"
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
+xg_ready() { find_xg_exe >/dev/null; }
+
+win_path_for_exe() {
+  local exe="$1"
+  case "$exe" in
+    *"/Program Files (x86)/eXtreme Gammon 2/"*)
+      printf '%s\n' "/Program Files (x86)/eXtreme Gammon 2/eXtremeGammon2.exe"
+      ;;
+    *"/Program Files/eXtreme Gammon 2/"*)
+      printf '%s\n' "/Program Files/eXtreme Gammon 2/eXtremeGammon2.exe"
+      ;;
+    *)
+      printf '%s\n' "$XG_WIN_PATH"
+      ;;
+  esac
+}
+
+set_program_path() {
+  local plist="$WRAPPER/Contents/Info.plist"
+  local winpath="$1"
+  local exe
+  [[ -f "$plist" ]] || return 0
+  if [[ -z "$winpath" ]]; then
+    exe="$(find_xg_exe || true)"
+    if [[ -n "$exe" ]]; then
+      winpath="$(win_path_for_exe "$exe")"
+    else
+      winpath="$XG_WIN_PATH"
+    fi
+  fi
+  if /usr/libexec/PlistBuddy -c "Set :\"Program Name and Path\" \"${winpath}\"" "$plist" >>"$LOG" 2>&1; then
+    log "Set Program Name and Path to $winpath"
+    return 0
+  fi
+  if /usr/libexec/PlistBuddy -c "Add :\"Program Name and Path\" string \"${winpath}\"" "$plist" >>"$LOG" 2>&1; then
+    log "Added Program Name and Path $winpath"
+    return 0
+  fi
+  log "PlistBuddy could not set Program Name and Path"
+  return 0
+}
 
 clean_env() {
   env -i \
@@ -45,10 +139,10 @@ polish_wrapper_plist() {
   plutil -replace "LSMultipleInstancesProhibited" -bool true "$plist" >/dev/null 2>&1 || true
   plutil -replace "Skip Gecko" -integer 1 "$plist" >/dev/null 2>&1 || true
   plutil -replace "Skip Mono" -integer 1 "$plist" >/dev/null 2>&1 || true
-  plutil -replace "Program Name and Path" -string "/Program Files/eXtreme Gammon 2/eXtremeGammon2.exe" "$plist" >/dev/null 2>&1 || true
   # Don't pop Configure.app / debug logs on launch
   plutil -replace "Debug Mode" -integer 0 "$plist" >/dev/null 2>&1 || true
   plutil -replace "always make Log files" -integer 0 "$plist" >/dev/null 2>&1 || true
+  set_program_path ""
 }
 
 launch_xg() {
@@ -59,14 +153,39 @@ launch_xg() {
   exit 0
 }
 
+# Signing the .app with --deep fails: MacOS/launcher is a symlink to Sikarugir.
+# An ad-hoc re-sign is not required for launch once Program Name and Path is set.
+skip_codesign() {
+  log "Skipping codesign (wrapper launcher is a symlink)."
+}
+
+stop_pid() {
+  local pid="${1:-}"
+  local n=0
+  [[ -n "$pid" ]] || return 0
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    while [ "$n" -lt 8 ]; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 1
+      n=$((n + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+  fi
+  wait "$pid" 2>/dev/null || true
+}
+
 mkdir -p "$HOME/Desktop"
 : > "$LOG"
 note "Starting Extreme Gammon..."
 log "PATH=$PATH"
 log "arch=$(uname -m)"
+require_macos_14
 
 if xg_ready; then
-  log "Already installed, launching."
+  log "Already installed at $(find_xg_exe), launching."
   launch_xg
 fi
 
@@ -140,30 +259,32 @@ if [[ ! -d "$WRAPPER" ]]; then
 fi
 
 /usr/bin/xattr -drs com.apple.quarantine "$WRAPPER" >/dev/null 2>&1 || true
-/usr/bin/codesign --force --deep --sign - "$WRAPPER" >>"$LOG" 2>&1 || true
+skip_codesign
 polish_wrapper_plist
 
 LAUNCH="$WRAPPER/Contents/MacOS/Sikarugir"
 chmod +x "$LAUNCH" 2>/dev/null || true
 
-if [[ ! -d "$WRAPPER/Contents/drive_c/windows" ]]; then
+resolve_prefix
+if [[ ! -d "$PREFIX/drive_c/windows" ]]; then
   note "Creating the game folder..."
   if ! clean_env "$LAUNCH" WSS-wineprefixcreate >>"$LOG" 2>&1; then
     note "Could not create the game folder. See the install log on your Desktop."
     open -e "$LOG"
     exit 1
   fi
+  resolve_prefix
 fi
 
-if [[ ! -d "$WRAPPER/Contents/drive_c/windows" ]]; then
+if [[ ! -d "$PREFIX/drive_c/windows" ]]; then
   note "The game folder still was not created. See the install log on your Desktop."
   open -e "$LOG"
   exit 1
 fi
 
 # Quiet Wine's Mac driver: fewer helper windows, keep keyboard in the game.
-REG="$WRAPPER/Contents/drive_c/windows/temp/xg-mac.reg"
-mkdir -p "$WRAPPER/Contents/drive_c/windows/temp"
+REG="$PREFIX/drive_c/windows/temp/xg-mac.reg"
+mkdir -p "$PREFIX/drive_c/windows/temp"
 cat > "$REG" << 'REG'
 REGEDIT4
 
@@ -184,28 +305,81 @@ for b in wine64 wine wine32on64; do
     break
   fi
 done
-PREFIX="$WRAPPER/Contents/SharedSupport/prefix"
-[[ -d "$PREFIX" ]] || PREFIX="$WRAPPER/Contents"
+log "prefix=$PREFIX winebin=${WINEBIN:-none}"
 if [[ -n "$WINEBIN" ]]; then
   clean_env env WINEPREFIX="$PREFIX" "$WINEBIN" regedit "C:\\windows\\temp\\xg-mac.reg" >>"$LOG" 2>&1 || true
 fi
 
-if ! xg_ready; then
-  note "Installing Extreme Gammon..."
-  mkdir -p "$WRAPPER/Contents/drive_c/users/crossover/Downloads"
-  cp "$CACHE/downloads/XG2install.exe" "$WRAPPER/Contents/drive_c/XG2install.exe"
-  if ! clean_env "$LAUNCH" WSS-installer "C:\\XG2install.exe" >>"$LOG" 2>&1; then
-    if [[ -n "$WINEBIN" ]]; then
-      log "Retrying silent install with $WINEBIN prefix=$PREFIX"
-      clean_env env WINEPREFIX="$PREFIX" "$WINEBIN" "$WRAPPER/Contents/drive_c/XG2install.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- >>"$LOG" 2>&1 || true
-    fi
+# If a previous run already dropped the exe, just point the wrapper at it and launch.
+if xg_ready; then
+  log "Found existing install at $(find_xg_exe); skipping installer."
+  polish_wrapper_plist
+  note "Opening Extreme Gammon..."
+  launch_xg
+fi
+
+note "Installing Extreme Gammon..."
+mkdir -p "$PREFIX/drive_c/users/crossover/Downloads"
+cp "$CACHE/downloads/XG2install.exe" "$PREFIX/drive_c/XG2install.exe"
+
+# Do not wait on the installer process: WSS-installer / start.exe can hang
+# with an I/O error long after the exe is already on disk. Poll for the exe.
+inst_pid=""
+if [[ -n "$WINEBIN" ]]; then
+  log "Silent install with $WINEBIN prefix=$PREFIX"
+  clean_env env WINEPREFIX="$PREFIX" "$WINEBIN" "C:\\XG2install.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- >>"$LOG" 2>&1 &
+  inst_pid=$!
+else
+  log "Install via wrapper (no wine binary found)"
+  clean_env "$LAUNCH" WSS-installer "C:\\XG2install.exe" >>"$LOG" 2>&1 &
+  inst_pid=$!
+fi
+
+n=0
+while [ "$n" -lt 90 ]; do
+  if xg_ready; then
+    log "Installer dropped the exe after ${n}s"
+    break
   fi
-  n=0
-  while [[ $n -lt 20 ]]; do
-    xg_ready && break
+  if ! kill -0 "$inst_pid" 2>/dev/null; then
+    wait "$inst_pid" 2>/dev/null || true
+    inst_pid=""
+    # Give files a moment to flush, then keep polling briefly.
     sleep 2
-    n=$((n+1))
-  done
+    if xg_ready; then
+      break
+    fi
+    # One short leftover wait in case the process exited just before the copy finished.
+    n2=0
+    while [ "$n2" -lt 10 ]; do
+      xg_ready && break
+      sleep 1
+      n2=$((n2 + 1))
+    done
+    break
+  fi
+  sleep 1
+  n=$((n + 1))
+done
+
+if xg_ready; then
+  # Let a still-running installer exit cleanly for a few seconds, then stop it.
+  if [[ -n "$inst_pid" ]]; then
+    w=0
+    while [ "$w" -lt 10 ]; do
+      kill -0 "$inst_pid" 2>/dev/null || break
+      sleep 1
+      w=$((w + 1))
+    done
+    stop_pid "$inst_pid"
+    inst_pid=""
+  fi
+else
+  if [[ -n "$inst_pid" ]]; then
+    stop_pid "$inst_pid"
+    inst_pid=""
+  fi
+  # Final check: treat a present exe as success even if the installer errored.
   if ! xg_ready; then
     note "Install did not finish. Double-click Extreme Gammon to try again. Details are in the install log on your Desktop."
     open -e "$LOG"
@@ -214,9 +388,8 @@ if ! xg_ready; then
 fi
 
 polish_wrapper_plist
-# Ad-hoc sign again after plist edits so Gatekeeper is less noisy
-/usr/bin/codesign --force --deep --sign - "$WRAPPER" >>"$LOG" 2>&1 || true
+skip_codesign
 
 note "Opening Extreme Gammon..."
-log "Install finished."
+log "Install finished at $(find_xg_exe)."
 launch_xg
