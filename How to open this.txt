@@ -1,7 +1,6 @@
 Extreme Gammon for Mac
 
 1. Double-click Extreme Gammon.
-2. If Mac says it cannot verify the developer: right-click Extreme Gammon, click Open, then Open again.
 
 First launch takes 5–10 minutes and needs internet.
 A status file appears on the Desktop while it works.

@@ -36,7 +36,7 @@ with zipfile.ZipFile(OUT, "w") as zf:
         if p.is_dir():
             add_dir(zf, arc)
         else:
-            add_file(zf, p, arc, executable=(p.name == "ExtremeGammon"))
+            add_file(zf, p, arc, executable=(p.name in ("ExtremeGammon", "macxg-wine")))
 print(OUT)
 
 LINUX = ROOT / "linux"

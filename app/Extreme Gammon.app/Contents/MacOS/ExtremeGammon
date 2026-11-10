@@ -155,9 +155,41 @@ clean_env() {
     "$@"
 }
 
+# Signed trampoline (com.playxg.macxg-wine) makes Dock/Cmd-Tab say "macxg".
+# Sikarugir always execs bin/wine; we keep the real Wine loader as bin/macxg.
+install_macxg_loader() {
+  local winebin trampoline
+  winebin="$WRAPPER/Contents/SharedSupport/wine/bin"
+  [[ -d "$winebin" ]] || return 0
+  trampoline="$(cd "$(dirname "$0")/../Resources" 2>/dev/null && pwd)/macxg-wine"
+  [[ -x "$trampoline" ]] || return 0
+  if /usr/bin/codesign -dv "$winebin/wine" 2>&1 | /usr/bin/grep -q "Identifier=com.playxg.macxg-wine"; then
+    if [[ -x "$winebin/macxg" ]]; then
+      log "macxg trampoline already in place"
+      return 0
+    fi
+    log "macxg trampoline is present but the Wine loader (bin/macxg) is missing"
+    return 0
+  fi
+  if [[ -x "$winebin/wine" && ! -x "$winebin/macxg" ]]; then
+    /bin/cp -p "$winebin/wine" "$winebin/macxg"
+    /bin/chmod +x "$winebin/macxg"
+    log "Copied Wine loader to bin/macxg"
+  fi
+  if [[ ! -x "$winebin/macxg" ]]; then
+    log "No Wine loader to wrap as macxg"
+    return 0
+  fi
+  /bin/cp -p "$trampoline" "$winebin/wine"
+  /bin/chmod +x "$winebin/wine"
+  /usr/bin/xattr -cr "$winebin/wine" "$winebin/macxg" >/dev/null 2>&1 || true
+  log "Installed macxg trampoline as bin/wine"
+}
+
 polish_wrapper_plist() {
   local plist="$WRAPPER/Contents/Info.plist"
   [[ -f "$plist" ]] || return 0
+  install_macxg_loader
   plutil -replace "CFBundleName" -string "Extreme Gammon" "$plist" >/dev/null 2>&1 || true
   plutil -replace "CFBundleDisplayName" -string "Extreme Gammon" "$plist" >/dev/null 2>&1 || true
   plutil -replace "CFBundleIdentifier" -string "com.playxg.extremegammon.wrapper" "$plist" >/dev/null 2>&1 || true
