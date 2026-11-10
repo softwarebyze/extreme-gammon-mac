@@ -19,24 +19,52 @@ XG_WIN_PATH="/Program Files (x86)/eXtreme Gammon 2/eXtremeGammon2.exe"
 log() { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*" >> "$LOG"; }
 note() { log "$1"; printf '%s\n' "$1" > "$HOME/Desktop/Extreme Gammon status.txt"; }
 
-macos_major() {
-  local ver
+# Return 0 if the running macOS is at least major.minor.patch.
+# Unknown or unparsable versions are allowed so a bad sw_vers cannot brick launch.
+macos_at_least() {
+  local need_maj="$1" need_min="$2" need_pat="$3"
+  local ver maj min pat
   ver="$(/usr/bin/sw_vers -productVersion 2>/dev/null || true)"
-  printf '%s\n' "${ver%%.*}"
+  case "$ver" in
+    ''|*[!0-9.]*) return 0 ;;
+  esac
+  local IFS=.
+  set -- $ver
+  maj="${1:-0}"
+  min="${2:-0}"
+  pat="${3:-0}"
+  maj="${maj%%[!0-9]*}"
+  min="${min%%[!0-9]*}"
+  pat="${pat%%[!0-9]*}"
+  case "$maj" in ''|*[!0-9]*) return 0 ;; esac
+  case "$min" in ''|*[!0-9]*) min=0 ;; esac
+  case "$pat" in ''|*[!0-9]*) pat=0 ;; esac
+  if [ "$maj" -ne "$need_maj" ]; then
+    [ "$maj" -gt "$need_maj" ]
+    return $?
+  fi
+  if [ "$min" -ne "$need_min" ]; then
+    [ "$min" -gt "$need_min" ]
+    return $?
+  fi
+  [ "$pat" -ge "$need_pat" ]
 }
 
-require_macos_14() {
-  local major
-  major="$(macos_major)"
-  log "macOS=$(/usr/bin/sw_vers -productVersion 2>/dev/null || echo unknown) major=${major:-unknown}"
-  case "$major" in
-    ''|*[!0-9]*) return 0 ;;
-  esac
-  if [ "$major" -lt 14 ]; then
-    note "This Mac is on macOS ${major}, but Extreme Gammon for Mac needs macOS 14 Sonoma or later."
-    /usr/bin/osascript -e 'display dialog "Extreme Gammon for Mac needs macOS 14 Sonoma or later." buttons {"OK"} default button "OK" with title "Extreme Gammon"' >/dev/null 2>&1 || true
-    exit 0
+require_macos() {
+  local ver arch msg
+  ver="$(/usr/bin/sw_vers -productVersion 2>/dev/null || echo unknown)"
+  arch="$(/usr/bin/uname -m 2>/dev/null || true)"
+  log "macOS=$ver arch=${arch:-unknown}"
+  if [ "$arch" = "arm64" ]; then
+    macos_at_least 11 0 0 && return 0
+    msg="Extreme Gammon for Mac needs macOS 11 Big Sur or later on Apple silicon."
+  else
+    macos_at_least 10 15 4 && return 0
+    msg="Extreme Gammon for Mac needs macOS 10.15.4 Catalina or later on Intel Macs."
   fi
+  note "This Mac is on macOS ${ver}, but ${msg}"
+  /usr/bin/osascript -e "display dialog \"${msg}\" buttons {\"OK\"} default button \"OK\" with title \"Extreme Gammon\"" >/dev/null 2>&1 || true
+  exit 0
 }
 
 # Wine prefix may live at SharedSupport/prefix (Sikarugir) or Contents.
@@ -134,7 +162,7 @@ polish_wrapper_plist() {
   plutil -replace "CFBundleDisplayName" -string "Extreme Gammon" "$plist" >/dev/null 2>&1 || true
   plutil -replace "CFBundleIdentifier" -string "com.playxg.extremegammon.wrapper" "$plist" >/dev/null 2>&1 || true
   plutil -replace "CFBundlePackageType" -string "APPL" "$plist" >/dev/null 2>&1 || true
-  plutil -replace "LSMinimumSystemVersion" -string "14.0" "$plist" >/dev/null 2>&1 || true
+  plutil -replace "LSMinimumSystemVersion" -string "10.15.4" "$plist" >/dev/null 2>&1 || true
   plutil -replace "NSHighResolutionCapable" -bool true "$plist" >/dev/null 2>&1 || true
   plutil -replace "LSMultipleInstancesProhibited" -bool true "$plist" >/dev/null 2>&1 || true
   plutil -replace "Skip Gecko" -integer 1 "$plist" >/dev/null 2>&1 || true
@@ -182,7 +210,7 @@ mkdir -p "$HOME/Desktop"
 note "Starting Extreme Gammon..."
 log "PATH=$PATH"
 log "arch=$(uname -m)"
-require_macos_14
+require_macos
 
 if xg_ready; then
   log "Already installed at $(find_xg_exe), launching."

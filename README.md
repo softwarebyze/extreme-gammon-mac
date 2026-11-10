@@ -26,7 +26,7 @@ This project is not affiliated with eXtreme Gammon or Gamesite 2000.
 
 ## Requirements
 
-- Mac: macOS 14 (Sonoma) or later, Apple Silicon or Intel
+- Mac: macOS 10.15.4 Catalina or later on Intel, macOS 11 Big Sur or later on Apple silicon. macOS 14 Sonoma or later is what has been tested; older versions are best-effort.
 - Linux: Ubuntu/Debian, Fedora, or Arch, with a desktop
 - Internet, first launch only
 - ~3 GB free disk
